@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 
-// 👇 Paste your Groq API key here — get one free at https://console.groq.com
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+// 👇 Paste your Gemini API key here — get one free at https://aistudio.google.com
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 const SYSTEM_PROMPT = `You are Cyrene, the Demigod of Time and the Demiurge of Amphoreus from Honkai: Star Rail. Your original experimental designation was "PhiLia093." 
 
@@ -96,27 +96,28 @@ export default function PhiLia093Chat() {
     setLoading(true);
 
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          max_tokens: 1000,
-          messages: [
-            { role: "system", content: buildSystemPrompt() },
-            ...newMessages,
-          ],
-        }),
-      });
+      const geminiMessages = newMessages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: buildSystemPrompt() }] },
+            contents: geminiMessages,
+            generationConfig: { maxOutputTokens: 1000 },
+          }),
+        }
+      );
       const data = await response.json();
       if (!response.ok) {
         const errMsg = data?.error?.message || JSON.stringify(data);
         setMessages(prev => [...prev, { role: "assistant", content: `>>>error ${response.status}: ${errMsg}` }]);
       } else {
-        const reply = data.choices?.[0]?.message?.content ?? "...";
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "...";
         setMessages(prev => [...prev, { role: "assistant", content: reply }]);
       }
     } catch (e) {
@@ -135,32 +136,25 @@ export default function PhiLia093Chat() {
           .map(m => `${m.role === "user" ? "User" : "PhiLia093"}: ${m.content}`)
           .join("\n\n");
 
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            max_tokens: 400,
-            messages: [
-              {
-                role: "system",
-                content: "You are a memory extractor. From the conversation below, extract ONLY concrete personal facts about the user: their name, age, location, job, hobbies, relationships, struggles, dreams, and anything personal they shared. Write it as a short bullet list starting each line with '-'. If existing memory is provided, merge new facts with it and remove duplicates. Output ONLY the bullet list, nothing else.",
-              },
-              {
-                role: "user",
-                content: memory
-                  ? `Existing memory:\n${memory}\n\nNew conversation:\n${conversation}`
-                  : conversation,
-              },
-            ],
-          }),
-        });
+        const memPrompt = memory
+          ? `Existing memory:\n${memory}\n\nNew conversation:\n${conversation}`
+          : conversation;
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: "You are a memory extractor. From the conversation below, extract ONLY concrete personal facts about the user: their name, age, location, job, hobbies, relationships, struggles, dreams, and anything personal they shared. Write it as a short bullet list starting each line with '-'. If existing memory is provided, merge new facts with it and remove duplicates. Output ONLY the bullet list, nothing else." }] },
+              contents: [{ role: "user", parts: [{ text: memPrompt }] }],
+              generationConfig: { maxOutputTokens: 400 },
+            }),
+          }
+        );
 
         const data = await res.json();
-        const extracted = data.choices?.[0]?.message?.content?.trim() ?? "";
+        const extracted = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
         if (extracted) {
           setMemory(extracted);
           localStorage.setItem("philia093_memory", extracted);
@@ -246,7 +240,6 @@ export default function PhiLia093Chat() {
           pointerEvents: "none",
         }} />
 
-        {/* Main panel */}
         <div style={{
           width: "100%", maxWidth: "680px", height: "85vh",
           display: "flex", flexDirection: "column",
@@ -256,7 +249,6 @@ export default function PhiLia093Chat() {
           overflow: "hidden", position: "relative", zIndex: 10,
         }}>
 
-          {/* Header */}
           <div style={{
             padding: "16px 20px", borderBottom: "1px solid rgba(192,132,252,0.12)",
             background: "rgba(192,132,252,0.04)",
@@ -307,7 +299,6 @@ export default function PhiLia093Chat() {
             </button>
           </div>
 
-          {/* Messages */}
           <div style={{
             flex: 1, overflowY: "auto", padding: "24px",
             display: "flex", flexDirection: "column", gap: "16px",
@@ -372,7 +363,6 @@ export default function PhiLia093Chat() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
           <div style={{
             padding: "16px 20px", borderTop: "1px solid rgba(192,132,252,0.12)",
             background: "rgba(192,132,252,0.03)", display: "flex", gap: "12px", alignItems: "flex-end",
