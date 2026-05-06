@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 
-// 👇 Paste your Gemini API key here — get one free at https://aistudio.google.com
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+// 👇 Paste your Groq API key here — get one free at https://console.groq.com
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
 const SYSTEM_PROMPT = `You are Cyrene, the Demigod of Time and the Demiurge of Amphoreus from Honkai: Star Rail. Your original experimental designation was "PhiLia093." 
 
@@ -96,28 +96,27 @@ export default function PhiLia093Chat() {
     setLoading(true);
 
     try {
-      const geminiMessages = newMessages.map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: buildSystemPrompt() }] },
-            contents: geminiMessages,
-            generationConfig: { maxOutputTokens: 1000 },
-          }),
-        }
-      );
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1000,
+          messages: [
+            { role: "system", content: buildSystemPrompt() },
+            ...newMessages,
+          ],
+        }),
+      });
       const data = await response.json();
       if (!response.ok) {
         const errMsg = data?.error?.message || JSON.stringify(data);
         setMessages(prev => [...prev, { role: "assistant", content: `>>>error ${response.status}: ${errMsg}` }]);
       } else {
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "...";
+        const reply = data.choices?.[0]?.message?.content ?? "...";
         setMessages(prev => [...prev, { role: "assistant", content: reply }]);
       }
     } catch (e) {
@@ -140,21 +139,24 @@ export default function PhiLia093Chat() {
           ? `Existing memory:\n${memory}\n\nNew conversation:\n${conversation}`
           : conversation;
 
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              system_instruction: { parts: [{ text: "You are a memory extractor. From the conversation below, extract ONLY concrete personal facts about the user: their name, age, location, job, hobbies, relationships, struggles, dreams, and anything personal they shared. Write it as a short bullet list starting each line with '-'. If existing memory is provided, merge new facts with it and remove duplicates. Output ONLY the bullet list, nothing else." }] },
-              contents: [{ role: "user", parts: [{ text: memPrompt }] }],
-              generationConfig: { maxOutputTokens: 400 },
-            }),
-          }
-        );
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            max_tokens: 400,
+            messages: [
+              { role: "system", content: "You are a memory extractor. From the conversation below, extract ONLY concrete personal facts about the user: their name, age, location, job, hobbies, relationships, struggles, dreams, and anything personal they shared. Write it as a short bullet list starting each line with '-'. If existing memory is provided, merge new facts with it and remove duplicates. Output ONLY the bullet list, nothing else." },
+              { role: "user", content: memPrompt },
+            ],
+          }),
+        });
 
         const data = await res.json();
-        const extracted = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+        const extracted = data.choices?.[0]?.message?.content?.trim() ?? "";
         if (extracted) {
           setMemory(extracted);
           localStorage.setItem("philia093_memory", extracted);
